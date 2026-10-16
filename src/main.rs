@@ -18,6 +18,11 @@ fn main() {
         .with_inner_size([960.0, 720.0])
         .with_min_inner_size([700.0, 560.0])
         .with_clamp_size_to_monitor_size(true);
+    #[cfg(target_os = "windows")]
+    {
+        // 显式开启 winit 的 Windows 文件拖放接收。
+        viewport = viewport.with_drag_and_drop(true);
+    }
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }

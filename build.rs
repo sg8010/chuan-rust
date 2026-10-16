@@ -21,7 +21,9 @@ fn main() {
         return;
     }
 
-    let ico = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/icon.ico");
+    // 构建脚本可能在项目目录改名后复用，不能把旧的绝对路径编进脚本。
+    let ico = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
+        .join("assets/icon.ico");
     if !ico.exists() {
         panic!("缺少图标资源: {}", ico.display());
     }

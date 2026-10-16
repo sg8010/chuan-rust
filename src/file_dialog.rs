@@ -434,6 +434,10 @@ impl FileDialog {
         ui.set_min_width(900.0);
         ui.set_max_width(900.0);
 
+        // 列表高度按窗口可用高度收缩,为底部操作区留出空间。固定 378px
+        // 在低分辨率/窗口高度被系统限制时会把取消与确认按钮挤出屏幕。
+        let list_height = (ui.ctx().content_rect().height() - 300.0).clamp(160.0, 378.0);
+
         // 标题 + 用途提示
         ui.horizontal(|ui| {
             ui.label(
@@ -546,7 +550,10 @@ impl FileDialog {
                 .stroke(Stroke::new(1.0, palette::line()))
                 .inner_margin(egui::Margin::same(16))
                 .show(ui, |ui| {
-                    ui.set_min_size(egui::vec2(ui.available_width(), 320.0));
+                    ui.set_min_size(egui::vec2(
+                        ui.available_width(),
+                        (list_height - 32.0).max(120.0),
+                    ));
                     ui.centered_and_justified(|ui| {
                         ui.label(
                             egui::RichText::new(
@@ -563,8 +570,8 @@ impl FileDialog {
                 .id_salt("chuan_file_dialog_list")
                 .striped(true)
                 .vscroll(true)
-                .min_scrolled_height(378.0)
-                .max_scroll_height(378.0)
+                .min_scrolled_height(list_height)
+                .max_scroll_height(list_height)
                 .sense(egui::Sense::click())
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .column(Column::remainder().at_least(320.0).clip(true))
