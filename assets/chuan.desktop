@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=传
+Comment=局域网点对点文件传输
+Exec=chuan
+Icon=chuan
+Terminal=false
+Categories=Network;FileTransfer;

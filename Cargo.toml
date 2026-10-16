@@ -1,0 +1,55 @@
+[package]
+name = "chuan"
+version = "2.0.0"
+edition = "2024"
+default-run = "chuan"
+autobins = false
+description = "传：局域网点对点文件传输"
+license = "MIT"
+
+[lib]
+name = "chuan_lib"
+
+[[bin]]
+name = "chuan"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "links", "glow", "x11"] }
+egui_extras = "0.36"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = { version = "0.4", features = ["std"] }
+getrandom = { version = "0.2", features = ["std"] }
+fs2 = "0.4"
+if-addrs = "0.13"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rfd = { version = "0.17", default-features = false }
+
+[patch.crates-io]
+glutin-winit = { path = "vendor/glutin-winit" }
+windows-link = { path = "vendor/windows-link" }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+strip = "symbols"
+
+[package.metadata.deb]
+maintainer = "chuan contributors"
+section = "net"
+priority = "optional"
+depends = "$auto, libgl1 | libgl1-mesa-glx, libegl1, libx11-6, libx11-xcb1, libxcb1, libxkbcommon0, libxkbcommon-x11-0, libxcursor1, libxi6, libxrandr2, libxfixes3, libxrender1"
+recommends = "libgl1-mesa-dri, fonts-noto-cjk | fonts-wqy-microhei"
+maintainer-scripts = "debian"
+assets = [
+  ["target/release/chuan", "usr/lib/chuan/chuan", "755"],
+  ["assets/chuan-launcher.sh", "usr/bin/chuan", "755"],
+  ["assets/chuan.desktop", "usr/share/applications/chuan.desktop", "644"],
+  ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/chuan.png", "644"],
+]

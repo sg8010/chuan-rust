@@ -1,0 +1,36 @@
+# 二进制文件
+chuan
+chuan.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 构建输出
+build/
+target/
+dist/
+
+# 测试文件
+*.test
+*.out
+testfile.bin
+bigfile.bin
+testdir/
+
+# Go 工作区文件
+go.work
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
