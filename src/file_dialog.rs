@@ -422,21 +422,68 @@ impl FileDialog {
     // ---------- 绘制 ----------
 
     fn body(&mut self, ui: &mut egui::Ui) -> DialogAction {
+        // Modal 不会自动缩放超出窗口的内容。限定整体尺寸，并独立分配按钮区；
+        // 标题、导航和列表可以滚动，但不能再把确认/取消按钮挤出窗口。
+        let screen = ui.ctx().content_rect().size();
+        let size = egui::vec2(
+            (screen.x - 64.0).clamp(0.0, 900.0),
+            (screen.y - 64.0).clamp(0.0, 680.0),
+        );
+        ui.set_width(size.x);
+        ui.set_height(size.y);
+        let rect = egui::Rect::from_min_size(ui.min_rect().min, size);
+        let button_height = ui
+            .spacing()
+            .interact_size
+            .y
+            .max(
+                ui.text_style_height(&egui::TextStyle::Button)
+                    + ui.spacing().button_padding.y * 2.0,
+            )
+            .max(34.0);
+        let footer_rect = egui::Rect::from_min_max(
+            egui::pos2(rect.left(), rect.bottom() - button_height),
+            rect.max,
+        );
+        let content_rect =
+            egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), footer_rect.top() - 16.0));
+        let action = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("chuan_file_dialog_content")
+                    .max_height(content_rect.height())
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.content(ui, content_rect.height()))
+                    .inner
+            })
+            .inner;
+        ui.painter().hline(
+            rect.x_range(),
+            footer_rect.top() - 8.0,
+            Stroke::new(1.0, palette::line()),
+        );
+        let footer_action = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
+                self.footer(ui)
+            })
+            .inner;
+        if matches!(action, DialogAction::None) {
+            footer_action
+        } else {
+            action
+        }
+    }
+
+    fn content(&mut self, ui: &mut egui::Ui, height: f32) -> DialogAction {
         let mut nav: Option<PathBuf> = None;
         let mut refresh = false;
         let mut goto_input = false;
         let mut row_intent: Option<RowIntent> = None;
-        let mut confirm = false;
-        let mut cancel = false;
         let mut filter_changed: Option<usize> = None;
         let mut hidden_changed = false;
 
-        ui.set_min_width(900.0);
-        ui.set_max_width(900.0);
-
-        // 列表高度按窗口可用高度收缩,为底部操作区留出空间。固定 378px
-        // 在低分辨率/窗口高度被系统限制时会把取消与确认按钮挤出屏幕。
-        let list_height = (ui.ctx().content_rect().height() - 300.0).clamp(160.0, 378.0);
+        let top = ui.cursor().top();
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
 
         // 标题 + 用途提示
         ui.horizontal(|ui| {
@@ -469,21 +516,20 @@ impl FileDialog {
                     nav = Some(path.clone());
                 }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if small_button(ui, "刷新  ↻").clicked() {
-                    refresh = true;
-                }
-                if self.parent.is_some() && small_button(ui, "上一级  ↑").clicked() {
-                    nav = self.parent.as_ref().map(|p| p.path.clone());
-                }
-            });
+            if self.parent.is_some() && small_button(ui, "上一级  ↑").clicked() {
+                nav = self.parent.as_ref().map(|p| p.path.clone());
+            }
+            if small_button(ui, "刷新  ↻").clicked() {
+                refresh = true;
+            }
         });
         ui.add_space(8.0);
 
         // 路径输入:回车或「转到」跳转
         ui.horizontal(|ui| {
             let button_width = 62.0;
-            let width = (ui.available_width() - button_width - 8.0).max(160.0);
+            let width =
+                (ui.available_width() - button_width - ui.spacing().item_spacing.x).max(0.0);
             let response = ui.add_sized(
                 [width, 30.0],
                 egui::TextEdit::singleline(&mut self.path_input)
@@ -503,7 +549,7 @@ impl FileDialog {
         ui.add_space(8.0);
 
         // 筛选行:名称关键字 + 文件类型 + 隐藏文件
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(
                 egui::RichText::new("筛选")
                     .size(12.0)
@@ -518,7 +564,7 @@ impl FileDialog {
                 ui.add_space(6.0);
                 let labels: Vec<String> = self.filters.iter().map(|f| f.label.clone()).collect();
                 egui::ComboBox::from_id_salt("chuan_file_dialog_filter")
-                    .width(300.0)
+                    .width(200.0)
                     .selected_text(&labels[self.filter_idx])
                     .show_ui(ui, |ui| {
                         for (index, label) in labels.iter().enumerate() {
@@ -531,15 +577,15 @@ impl FileDialog {
                         }
                     });
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.checkbox(&mut self.show_hidden, "显示隐藏文件").changed() {
-                    hidden_changed = true;
-                }
-            });
+            if ui.checkbox(&mut self.show_hidden, "显示隐藏文件").changed() {
+                hidden_changed = true;
+            }
         });
         ui.add_space(8.0);
 
         // 目录列表(虚拟滚动:只画可见行)
+        // 按本帧导航栏的实际高度分配列表空间，空间不足时由外层滚动兜底。
+        let list_height = (height - (ui.cursor().top() - top) - 100.0).clamp(72.0, 378.0);
         let visible = self.visible_rows();
         let selected = self.selected.clone();
         let parent = self.parent.as_ref();
@@ -552,7 +598,7 @@ impl FileDialog {
                 .show(ui, |ui| {
                     ui.set_min_size(egui::vec2(
                         ui.available_width(),
-                        (list_height - 32.0).max(120.0),
+                        (list_height - 32.0).max(0.0),
                     ));
                     ui.centered_and_justified(|ui| {
                         ui.label(
@@ -574,7 +620,7 @@ impl FileDialog {
                 .max_scroll_height(list_height)
                 .sense(egui::Sense::click())
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                .column(Column::remainder().at_least(320.0).clip(true))
+                .column(Column::remainder().at_least(80.0).clip(true))
                 .column(Column::exact(110.0).clip(true))
                 .column(Column::exact(90.0).clip(true))
                 .header(26.0, |mut header| {
@@ -741,9 +787,27 @@ impl FileDialog {
         } else {
             ui.label(egui::RichText::new(" ").size(12.0));
         }
-        ui.add_space(6.0);
+        DialogAction::None
+    }
 
-        ui.horizontal(|ui| {
+    fn footer(&mut self, ui: &mut egui::Ui) -> DialogAction {
+        let mut confirm = false;
+        let mut cancel = false;
+        // 从右向左先放按钮，长路径只能截断提示文字，不能抢占按钮的空间。
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let label = match (self.purpose, self.overwrite.is_some()) {
+                (Purpose::Save, true) => "覆盖保存",
+                (Purpose::Save, false) => "保存",
+                (Purpose::PickFolder, _) => "选择此文件夹",
+                (Purpose::Open, _) => "打开",
+            };
+            let enabled = self.purpose != Purpose::Open || self.selected.is_some();
+            if primary_button(ui, label, 112.0, enabled).clicked() {
+                confirm = true;
+            }
+            if secondary_button(ui, "取消", 88.0).clicked() {
+                cancel = true;
+            }
             let tip = if self.purpose == Purpose::PickFolder {
                 match self.selected_entry() {
                     Some((path, true)) => format!(
@@ -765,28 +829,20 @@ impl FileDialog {
                     Some((_, true)) => "已选择文件夹,点「打开」进入".to_owned(),
                     None => {
                         // 只统计目录项(「上一级」不算一项);有筛选时显示的是可见数量
-                        let shown = visible.iter().filter(|&&i| i != PARENT_ROW).count();
+                        let shown = self
+                            .visible_rows()
+                            .iter()
+                            .filter(|&&i| i != PARENT_ROW)
+                            .count();
                         format!("共 {shown} 个项目")
                     }
                 }
             };
-            ui.label(egui::RichText::new(tip).size(12.0).color(palette::soft()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let label = match (self.purpose, self.overwrite.is_some()) {
-                    (Purpose::Save, true) => "覆盖保存",
-                    (Purpose::Save, false) => "保存",
-                    (Purpose::PickFolder, _) => "选择此文件夹",
-                    (Purpose::Open, _) => "打开",
-                };
-                let enabled = self.purpose != Purpose::Open || self.selected.is_some();
-                let width = 96.0;
-                if primary_button(ui, label, width, enabled).clicked() {
-                    confirm = true;
-                }
-                if secondary_button(ui, "取消", 88.0).clicked() {
-                    cancel = true;
-                }
-            });
+            ui.add(
+                egui::Label::new(egui::RichText::new(&tip).size(12.0).color(palette::soft()))
+                    .truncate(),
+            )
+            .on_hover_text(tip);
         });
 
         if cancel {
